@@ -1,0 +1,6 @@
+Revision history for Perl extension Network::Tor.
+
+0.01  Thu Apr 27 10:52:44 2017
+	- original version; created by h2xs 1.23 with options
+		-n Network::Tor -e tor.h
+
