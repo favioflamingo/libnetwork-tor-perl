@@ -1,6 +1,7 @@
 package Network::Tor;
 
 use 5.020002;
+use utf8;
 use strict;
 use warnings;
 use Carp;
@@ -63,6 +64,8 @@ XSLoader::load('Network::Tor', $VERSION);
 
 ---+ constructors
 
+   * [[https://gitweb.torproject.org/torspec.git/tree/control-spec.txt][Control Spec]]
+
 =cut
 
 =pod
@@ -84,6 +87,10 @@ sub new {
 
 =cut
 
+sub authenticated{
+	return shift->{'authenticated'};
+}
+
 =pod
 
 ---++ password
@@ -97,6 +104,7 @@ sub password{
 	}
 	elsif($x =~ m/^([0-9a-zA-Z]+)$/){
 		$this->{'password'} = $1;
+		return $this->{'password'};
 	}
 	else{
 		die "bad password";
@@ -105,7 +113,7 @@ sub password{
 
 =pod
 
----++ address
+---++ address("192.168.0.23:9051")
 
 =cut
 
@@ -114,14 +122,112 @@ sub address{
 	if(!defined $x){
 		return ($this->{'address'},$this->{'port'});
 	}
-	elsif($x =~ m/^([0-9a-zA-Z]+)$/){
-		$this->{'password'} = $1;
+	elsif($x =~ m/^([0-9a-zA-Z\.]+)(?:\:(\d+))?$/){
+		$this->{'address'} = $1;
+		$this->{'port'} = $2;
+		return ($this->{'address'},$this->{'port'});
 	}
 	else{
-		die "bad password";
+		die "bad address";
 	}
 }
 
+=pod
+
+---+ utilities
+
+=cut
+
+=pod
+
+---++ connect()
+
+=cut
+
+sub connect{
+	my ($this,$evloopsub) = @_; 
+	my ($addr,$port) = ($this->{'address'},$this->{'port'});
+	use IO::Socket::INET;
+	
+	my $socket = IO::Socket::INET->new(
+		PeerHost => $addr,
+		PeerPort => $port,
+		Proto => 'tcp',
+	) or die "ERROR in Socket Creation : $!\n";
+
+	print $socket 'AUTHENTICATE "'.$this->password.'"'."\n";
+
+	$this->{'authenticated'} = 0;
+
+	$this->{'socket'} = $socket;
+	
+	my $line = <$socket>;
+	chomp($line);
+	if($line =~ m/^(250 OK)$/){
+		$this->{'authenticated'} = 1;
+	}
+	else{
+		die "bad authentication";
+	}
+	
+}
+
+=pod
+
+---++ sendcmd
+
+=cut
+
+sub sendcmd {
+	my ($this,$cmd) = @_;
+	my $socket = $this->{'socket'};
+	print $socket "$cmd\n";
+	
+	
+}
+
+=pod
+
+---+ commands
+
+=cut
+
+=pod
+
+---++ getinfo('version')
+
+=cut
+
+sub getinfo{
+	my ($this,$keyword) = @_;
+	
+}
+
+=pod
+
+---++ onion_add('version')
+
+  Examples:
+     C: ADD_ONION NEW:BEST Flags=DiscardPK Port=80
+     S: 250-ServiceID=exampleonion1234
+     S: 250 OK
+
+     C: ADD_ONION RSA1024:[Blob Redacted] Port=80,192.168.1.1:8080
+     S: 250-ServiceID=sampleonion12456
+     S: 250 OK
+
+     C: ADD_ONION NEW:BEST Port=22 Port=80,8080
+     S: 250-ServiceID=testonion1234567
+     S: 250-PrivateKey=RSA1024:[Blob Redacted]
+     S: 250 OK
+
+     C: ADD_ONION NEW:BEST Flags=DiscardPK,BasicAuth Port=22
+        ClientAuth=alice:[Blob Redacted] ClientAuth=bob
+     S: 250-ServiceID=testonion1234567
+     S: 250-ClientAuth=bob:[Blob Redacted]
+     S: 250 OK
+
+=cut
 
 1;
 __END__
