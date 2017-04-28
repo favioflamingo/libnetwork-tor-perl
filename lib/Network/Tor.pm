@@ -60,6 +60,11 @@ XSLoader::load('Network::Tor', $VERSION);
 
 # Autoload methods go after =cut, and are processed by the autosplit program.
 
+my $multilineregex = qr/^(\d{3})\+([0-9a-zA-Z\-\/\*]+)\=$/;
+my $multiline_middle_regex = qr/^(\d{3})\s(.*)$/;
+my $doublelineregex = qr/^(\d{3})\-([0-9a-zA-Z\-\/\*]+)\=(.*)$/;
+my $singlelineregex = qr/^(\d{3})\s(.*)$/;
+
 =pod
 
 ---+ constructors
@@ -70,14 +75,26 @@ XSLoader::load('Network::Tor', $VERSION);
 
 =pod
 
----++ new
+---++ new("thesuperpassword","127.0.0.1:9051")
 
 =cut
 
 sub new {
 	my ($package,$password,$address) = @_;
 	
+	my $this = {
+		'commands' => []
+		,'callbacks' => []
+		,'authenticated' => 0
+		,'current' => {'type' => 0,'data' => [],'prestopped' => 0}
+	};
+		
+	bless($this,$package);
 	
+	$this->password($password);
+	$this->address($address);
+	
+	return $this;
 }
 
 
@@ -115,21 +132,33 @@ sub password{
 
 ---++ address("192.168.0.23:9051")
 
+Include the port.  Returns only the address.
+
 =cut
 
 sub address{
 	my ($this,$x) = @_;
 	if(!defined $x){
-		return ($this->{'address'},$this->{'port'});
+		return $this->{'address'};
 	}
 	elsif($x =~ m/^([0-9a-zA-Z\.]+)(?:\:(\d+))?$/){
 		$this->{'address'} = $1;
 		$this->{'port'} = $2;
-		return ($this->{'address'},$this->{'port'});
+		return $this->{'address'};
 	}
 	else{
 		die "bad address";
 	}
+}
+
+=pod
+
+---++ port
+
+=cut
+
+sub port{
+	return shift->{'port'};
 }
 
 =pod
@@ -155,36 +184,210 @@ sub connect{
 		Proto => 'tcp',
 	) or die "ERROR in Socket Creation : $!\n";
 
-	print $socket 'AUTHENTICATE "'.$this->password.'"'."\n";
-
-	$this->{'authenticated'} = 0;
-
+	$this->sendcmd(
+		'AUTHENTICATE "'.$this->password.'"'
+		,sub{
+			my $response = shift;
+			my $t1 = $this;
+			$response =~ s/[\n\r]*$//;
+			if($response =~ m/^250 OK$/){
+				warn "Authenticated";
+				$t1->{'authenticated'} = 1;
+			}
+			else{
+				die "bad authentication";
+			}
+		}
+	);
 	$this->{'socket'} = $socket;
-	
-	my $line = <$socket>;
-	chomp($line);
-	if($line =~ m/^(250 OK)$/){
-		$this->{'authenticated'} = 1;
-	}
-	else{
-		die "bad authentication";
-	}
 	
 }
 
 =pod
 
----++ sendcmd
+---++ sendcmd($cmd,$callback)
 
 =cut
 
 sub sendcmd {
-	my ($this,$cmd) = @_;
-	my $socket = $this->{'socket'};
-	print $socket "$cmd\n";
+	my ($this,$cmd,$callback) = @_;
+	die "no command" unless defined && 0 < length($cmd);
+	$callback //= sub{};
+	push(@{$this->{'commands'}},[$cmd,$callback]);		
+}
+
+=pod
+
+---++ dequeue()->$cmd
+
+=cut
+
+sub dequeue {
+	my ($this) = @_;
+	return undef unless 0 < scalar(@{$this->{'commands'}});
+	my $x = shift(@{$this->{'commands'}});
+	push(@{$this->{'callbacks'}},$x->[1]);
+	return $x->[0];
+}
+
+=pod
+
+---++ read_line($line)
+
+2.3. Replies from Tor to the controller
+
+    Reply = SyncReply / AsyncReply
+    SyncReply = *(MidReplyLine / DataReplyLine) EndReplyLine
+    AsyncReply = *(MidReplyLine / DataReplyLine) EndReplyLine
+
+    MidReplyLine = StatusCode "-" ReplyLine
+    DataReplyLine = StatusCode "+" ReplyLine CmdData
+    EndReplyLine = StatusCode SP ReplyLine
+    ReplyLine = [ReplyText] CRLF
+    ReplyText = XXXX
+    StatusCode = 3DIGIT
+
+  Multiple lines in a single reply from Tor to the controller are guaranteed to
+  share the same status code. Specific replies are mentioned below in section 3,
+  and described more fully in section 4.
+
+  [Compatibility note:  versions of Tor before 0.2.0.3-alpha sometimes
+  generate AsyncReplies of the form "*(MidReplyLine / DataReplyLine)".
+  This is incorrect, but controllers that need to work with these
+  versions of Tor should be prepared to get multi-line AsyncReplies with
+  the final line (usually "650 OK") omitted.]
+  
+250+circuit-status=
+373 BUILT $4A0E54E69343B7CF6138C118843CE860E8511F78~yoshihisa BUILD_FLAGS=ONEHOP_TUNNEL,IS_INTERNAL,NEED_CAPACITY PURPOSE=GENERAL TIME_CREATED=2017-04-28T12:04:26.619127
+372 BUILT $B204DE75B37064EF6A4C6BAF955C5724578D0B32~cry BUILD_FLAGS=ONEHOP_TUNNEL,IS_INTERNAL,NEED_CAPACITY PURPOSE=GENERAL TIME_CREATED=2017-04-28T11:59:21.622452
+371 BUILT $C4AEA05CF380BAD2230F193E083B8869B4A29937~bakunin4 BUILD_FLAGS=ONEHOP_TUNNEL,IS_INTERNAL,NEED_CAPACITY PURPOSE=GENERAL TIME_CREATED=2017-04-28T11:59:21.620241
+.
+250 OK
+
+250-address-mappings/all=
+250 OK
+
+250-version=0.2.5.12 (git-6350e21f2de7272f)
+250 OK
+
+
+=cut
+
+sub read_line{
+	my $this = shift;
+	my $current = $this->{'current'};
+	my $line = shift;
+	$line =~ s/[\n\r]*$//;
 	
+	#warn "...Line=[$line]\n";
+	
+	
+	
+	if($current->{'type'} == 1 && $line =~ m/$multiline_middle_regex/ && !$current->{'prestopped'}){
+		# keep going
+		push(@{$current->{'data'}},$2);
+		#warn "pushing data=$2";
+		return undef;
+	}
+	elsif($current->{'type'} == 1 && $line =~ m/^\.$/){
+		#warn "prestopping multiline\n";
+		$current->{'prestopped'} = 1;
+		return undef;
+	}
+	elsif($current->{'type'} == 1 && $line =~ m/$singlelineregex/){
+		#warn "stopping multiline\n";
+		$current->{'status'} = $1;
+		$current->{'status message'} = $2;
+		$this->reset_current();
+		return undef;
+	}
+	elsif($current->{'type'} == 1){
+		die "bad data";
+	}
+	elsif($current->{'type'} == 2 && $line =~ m/$singlelineregex/){
+		$current->{'status'} = $1;
+		$current->{'status message'} = $2;
+		#warn "stopping doubleline\n";
+		$this->reset_current();
+		# got all the data
+		
+		return undef;
+	}
+	elsif($current->{'type'} == 2){
+		die "bad data";
+	}
+	
+	
+	
+	my ($status,$keyword,$data);
+	if($line =~ m/$multilineregex/){
+		# starting multiline
+		($status,$keyword,$data) = ($1,$2,'');
+		#warn "($status,$keyword,$data)";
+		#warn "setting type=1\n";
+		$current->{'keyword'} = $keyword;
+		$current->{'type'} = 1;
+	}
+	elsif($line =~ m/$doublelineregex/){
+		# starting double line
+		($status,$keyword,$data) = ($1,$2,$3);
+		#warn "($status,$keyword,$data)";
+		$current->{'keyword'} = $keyword;
+		push(@{$current->{'data'}},$data);
+		$current->{'type'} = 2;
+	}
+	elsif($line =~ m/$singlelineregex/){
+		#warn "($status,$keyword,$data)";
+		# done, so type=0
+		$current->{'status'} = $1;
+		$current->{'status message'} = $2;
+		$this->reset_current();
+		#warn "stopping singleline\n";
+		
+	}
+	else{
+		die "Got line=$line with type=".$current->{'type'};
+	}
+	return;
 	
 }
+
+
+# used only in read_line
+sub reset_current{
+	my $this = shift;	
+	$this->read_data();
+	
+	my $current = $this->{'current'};
+	#warn "resetting from type=".$c1->{'type'}."\n";
+	$current->{'type'} = 0;
+	$current->{'data'} = [];
+	$current->{'prestopped'} = 0;
+	$current->{'keyword'} = '';
+	$current->{'status'} = 0;
+	$current->{'status message'} = '';
+};
+
+=pod
+
+---++ read_data
+
+After reading lines and getting a 250 OK response, then feed the data to the callback.
+
+=cut
+
+sub read_data{
+	my $this = shift;
+	my $current = $this->{'current'};
+	my ($status,$status_message,$keyword,$data) = (
+		$current->{'status'},$current->{'status message'},
+		$current->{'keyword'},$current->{'data'}
+	);
+	
+	warn "($status,$status_message,$keyword)\n";
+	warn "..data=\n...".join("\n...",@{$data});
+}
+
 
 =pod
 
