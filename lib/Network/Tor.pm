@@ -33,7 +33,7 @@ our @EXPORT = qw(
 	
 );
 
-our $VERSION = '0.01';
+our $VERSION = '0.1';
 
 sub AUTOLOAD {
     # This AUTOLOAD is used to 'autoload' constants from the constant()
@@ -66,7 +66,7 @@ XSLoader::load('Network::Tor', $VERSION);
 # Autoload methods go after =cut, and are processed by the autosplit program.
 
 my $multilineregex = qr/^(\d{3})\+([0-9a-zA-Z\-\/\*]+)\=$/;
-my $multiline_middle_regex = qr/^(\d{3}|[0-9a-zA-Z])[\s](.*)$/;
+my $multiline_middle_regex = qr/^(.*)$/;
 my $doublelineregex = qr/^(\d{3})\-([0-9a-zA-Z\-\/\*\:]+)\=(.*)$/;
 my $singlelineregex = qr/^(\d{3})\s(.*)$/;
 
@@ -391,7 +391,7 @@ sub write_socket{
 	
 	#warn "do write";
 	if(defined $cmd){
-		warn "Printing cmd=[$cmd]";
+		#warn "Printing cmd=[$cmd]";
 		$cmd = encode('UTF-8', "$cmd\n", Encode::FB_CROAK);
 		my $n = syswrite($socket,$cmd,8192);
 		$this->{'write buffer'} = substr($cmd,$n);
@@ -507,21 +507,21 @@ sub read_line{
 	
 	#warn "type=".$current->{'type'}."...Line=[$line]\n";
 	
-	if($current->{'type'} == 1 && $line =~ m/$multiline_middle_regex/ ){
+	if($current->{'type'} == 1 && $line =~ m/$multiline_middle_regex/ && $line ne '.'){
 		#warn "multiline middle";
 		# keep going
-		push(@{$current->{'key value data'}},$2);
-		#warn "pushing data=$2";
+		push(@{$current->{'key value data'}},$1);
+
 		return undef;
 	}
-	elsif($current->{'type'} == 1 && $line =~ m/^\.$/){
+	elsif($current->{'type'} == 1 && $line eq '.'){
 		#warn "stopping multiline\n";
 		$current->{'type'} = 0;
 		$current->{'data'}->{$current->{'keyword'}} = $current->{'key value data'};
 		return undef;
 	}
 	elsif($current->{'type'} == 1){
-		die "bad data";
+		die "bad data with line=[$line]";
 	}
 	
 	my ($status,$keyword,$data);
@@ -696,8 +696,9 @@ sub getinfo_default{
 =cut
 
 sub onion_add{
-	my ($this,$callback,$ORname,$hiddenport,$target) = @_;
+	my ($this,$callback,$hiddenport,$target,$options) = @_;
 	$callback //= sub{};
+	$options //= {};
 	
 	my ($taddr,$tport);
 	if($target =~ m/^([^\:]+)\:(\d+)$/){
@@ -715,14 +716,35 @@ sub onion_add{
 		die "bad hidden port";
 	}
 	
-	die "bad orname " unless 0 < length($ORname);
+	my $flag = '';
+	if(defined $options->{'Flag'}){
+		$flag = "Flags=".$options->{'Flag'};
+	}
 	
 	$this->sendcmd(
-		"ADD_ONION NEW:BEST Port=$hiddenport,$taddr:$tport"
+		"ADD_ONION NEW:BEST $flag Port=$hiddenport,$taddr:$tport"
 		,$callback
 	);
 	
 	
+}
+
+=pod
+
+---++ onion_del(sub{},'djf94fnlkdnsl')
+
+=cut
+
+sub onion_del{
+	my ($this,$callback,$onionurl) = @_;
+	if($onionurl =~ m/^([0-9a-zA-Z\-\.]+)(?:\.onion)?$/){
+		$onionurl = $1;
+	}
+	else{
+		die "bad onion url";
+	}
+	$callback //= sub{};
+	$this->sendcmd("DEL_ONION $onionurl",$callback);
 }
 
 =pod

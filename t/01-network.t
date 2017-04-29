@@ -53,7 +53,7 @@ $torcontrol->setread(sub{
 });
 
 # my timeout , because we only want the test to last 5 seconds
-my $wtimer = $loop->timer(5,0,sub{
+my $wtimer = $loop->timer(15,0,sub{
 	my ($l1) = ($loop);
 	#warn "finishing loop";
 	$l1->break(EV::BREAK_ALL);
@@ -78,6 +78,8 @@ $torcontrol->sendauth(sub{
 		,'version'
 	);
 	
+	
+	
 	$tc->getinfo(
 		sub{
 			my ($this,$status,$status_msg,$dataref) = @_;
@@ -90,21 +92,37 @@ $torcontrol->sendauth(sub{
 		,'status/version/current'
 	);
 	
-	
-	$tc->getinfo(
-		sub{
-			my ($this,$status,$status_msg,$dataref) = @_;
-			warn "cb($status,$status_msg)\n...".Data::Dumper::Dumper($dataref)."\n";
-		}
-		,'onions/detached'
-	);
-	
+		
 	$tc->onion_add(
 		sub{
 			my ($this,$status,$status_msg,$dataref) = @_;
-			warn "hiddenssh=".Data::Dumper::Dumper($dataref);		
+			#warn "hiddenssh=".Data::Dumper::Dumper($dataref);
+			
+			$tc->onion_add(
+				sub{
+					my ($this2,$status2,$status_msg2,$dataref2) = @_;
+					#warn "cb($status,$status_msg)\n...".Data::Dumper::Dumper($dataref)."\n";
+
+					$tc->onion_del(
+						sub{
+							my ($this3,$status3,$status_msg3,$dataref3) = @_;
+							warn "cb($status3,$status_msg3)\n";
+						}
+						,$dataref->{'ServiceID'}
+					) if defined $dataref->{'ServiceID'};
+					
+					$tc->getinfo(
+						sub{
+							my ($this3,$status3,$status_msg3,$dataref3) = @_;
+							warn "cb($status3,$status_msg3)\n...".Data::Dumper::Dumper($dataref3)."\n";
+						}
+						,'onions/current'
+					);
+				}
+				,5211,'ssh-gateway:22'
+			);	
 		}
-		,'hiddenssh',4222,'ssh-gateway:22'
+		,4222,'ssh-gateway:22',{'Flag' => 'DiscardPK,Detach'}
 	);
 	
 });
