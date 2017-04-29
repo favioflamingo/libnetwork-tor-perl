@@ -8,6 +8,7 @@ use Carp;
 use Convert::Base32; # libconvert-base32-perl
 use MIME::Base64; # libmime-base64-perl
 use Crypt::OpenSSL::RSA; # libcrypt-openssl-rsa-perl
+use Encode qw(decode encode);
 
 require Exporter;
 use AutoLoader;
@@ -90,6 +91,9 @@ sub new {
 		,'callbacks' => []
 		,'authenticated' => 0
 		,'current' => {'type' => 0,'data' => [],'prestopped' => 0}
+		,'bytes read' => 0
+		,'buffer' => ''
+		,'write buffer' => ''
 	};
 		
 	bless($this,$package);
@@ -233,6 +237,7 @@ sub connect{
 		Proto => 'tcp',
 	) or die "ERROR in Socket Creation : $!\n";
 	$socket->autoflush(1);
+	binmode($socket);
 
 	$this->{'socket'} = $socket;
 	
@@ -283,7 +288,7 @@ sub sendcmd {
 	push(@{$this->{'commands'}},[$cmd,$callback]);	
 	
 	# add this to flush the last line of the response to $cmd
-	push(@{$this->{'commands'}},["GETINFO dormant",sub{}]);
+	#push(@{$this->{'commands'}},["GETINFO dormant",sub{}]);
 	
 	if($this->{'socket read only'}){
 		$this->setwrite();
@@ -362,6 +367,88 @@ sub setread {
 
 =pod
 
+---++ write_socket
+
+=cut
+
+sub write_socket{
+	my $this = shift;
+	
+	my $socket = $this->socket();
+	
+	if(0 < length($this->{'write buffer'})){
+		my $buf = $this->{'write buffer'};
+		$this->{'write buffer'} = '';
+		my $n = syswrite($socket,$buf,8192);
+		$this->{'write buffer'} = substr($buf,$n);
+		return undef;
+	}
+	
+	my $cmd = $this->dequeue();
+	
+	#warn "do write";
+	if(defined $cmd){
+		#warn "Printing cmd=[$cmd]";
+		$cmd = encode('UTF-8', "$cmd\n", Encode::FB_CROAK);
+		my $n = syswrite($socket,$cmd,8192);
+		$this->{'write buffer'} = substr($cmd,$n);
+	}
+	else{
+		$this->setread();
+	}
+}
+
+=pod
+
+---++ read_socket
+
+=cut
+
+sub read_socket{
+	my $this = shift;
+	my $socket = $this->socket();
+	my ($m,$n,$buf) = (0,$this->{'bytes read'},'');
+	# read in via socket
+	$m += sysread($socket,$buf,4*8192);
+	$this->{'bytes read'} += $m;
+	$buf = decode('UTF-8', $buf,     Encode::FB_CROAK);
+	$this->{'buffer'} .= $buf;
+	
+	#warn "Buffer=".$this->{'buffer'};
+	
+	my @lines;
+	my $x = $this->{'buffer'};
+	while(0 < length($x)){
+		if($x =~ m/^([^\n\r]+)[\n\r]+(.*)$/){
+			my $y = $1;
+			push(@lines,$y) if 0 < length($y);
+			$x = $2;
+		}
+		else{
+			last;
+		}
+	}
+	if(0 < length($x)){
+		$this->{'buffer'} = $x;
+	}
+	else{
+		$this->{'buffer'} = '';
+	}
+	
+	#warn "Lines=[".join('|',@lines)."]";
+
+	if(0 < scalar(@lines)){
+		while(my $line = shift(@lines)){
+			$this->read_line($line);
+		}		
+		$this->{'buffer'} = '';
+		$this->{'bytes read'} = 0;
+	}
+
+}
+
+=pod
+
 ---++ read_line($line)
 
 2.3. Replies from Tor to the controller
@@ -405,8 +492,11 @@ sub setread {
 
 sub read_line{
 	my $this = shift;
-	my $current = $this->{'current'};
 	my $line = shift;
+	
+	
+	my $current = $this->{'current'};
+	
 	$line =~ s/[\n\r]*$//;
 	
 	#warn "type=".$current->{'type'}."...Line=[$line]\n";

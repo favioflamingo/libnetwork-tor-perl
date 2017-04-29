@@ -7,7 +7,7 @@ use strict;
 use warnings;
 
 use EV; # need libev-perl for testing
-use Test::More tests => 2;
+use Test::More tests => 4;
 BEGIN { use_ok('Network::Tor') };
 
 ######################### set up event loop #######################
@@ -28,24 +28,14 @@ my $w = $loop->io(fileno($sock), EV::READ | EV::WRITE, sub {
 	if($revents & EV::READ){
 		# do read
 		#warn "do read\n";
-		my $line = <$sock>;
-		warn "Line=$line";
-		$torcontrol->read_line($line);
+		$torcontrol->read_socket();
 	}
 	elsif($revents & EV::WRITE){
 		# do write
-		my $cmd = $torcontrol->dequeue();
-		#warn "do write";
-		if(defined $cmd){
-			warn "Printing cmd=[$cmd]";
-			print $sock $cmd."\n";
-		}
-		else{
-			$torcontrol->setread();
-		}
+		$torcontrol->write_socket();
 	}
 	else{
-		warn "should not be here";
+		#warn "should not be here";
 		$loop->break();
 	}
 });
@@ -63,7 +53,7 @@ $torcontrol->setread(sub{
 });
 
 # my timeout , because we only want the test to last 5 seconds
-my $wtimer = $loop->timer(10,0,sub{
+my $wtimer = $loop->timer(5,0,sub{
 	my ($l1) = ($loop);
 	#warn "finishing loop";
 	$l1->break(EV::BREAK_ALL);
@@ -79,7 +69,10 @@ $torcontrol->sendauth(sub{
 	$tc->getinfo(
 		sub{
 			my ($this,$status,$status_msg,$keyword,$dataref) = @_;
-			warn "Got $keyword=\n...".join("\n...",@{$dataref});
+			ok(
+				$dataref->[0] =~ m/^0\.2/
+				,'checking version'
+			);
 		}
 		,'version'
 	);
@@ -87,7 +80,7 @@ $torcontrol->sendauth(sub{
 	$tc->getinfo(
 		sub{
 			my ($this,$status,$status_msg,$keyword,$dataref) = @_;
-			warn "Got $keyword=\n...".join("\n...",@{$dataref});
+			ok(join("\n...",@{$dataref}) eq 'recommended', 'checking status/version/current');
 		}
 		,'status/version/current'
 	);
