@@ -5,6 +5,9 @@ use utf8;
 use strict;
 use warnings;
 use Carp;
+use Convert::Base32; # libconvert-base32-perl
+use MIME::Base64; # libmime-base64-perl
+use Crypt::OpenSSL::RSA; # libcrypt-openssl-rsa-perl
 
 require Exporter;
 use AutoLoader;
@@ -61,7 +64,7 @@ XSLoader::load('Network::Tor', $VERSION);
 # Autoload methods go after =cut, and are processed by the autosplit program.
 
 my $multilineregex = qr/^(\d{3})\+([0-9a-zA-Z\-\/\*]+)\=$/;
-my $multiline_middle_regex = qr/^(\d{3})\s(.*)$/;
+my $multiline_middle_regex = qr/^(\d{3}|[0-9a-zA-Z])\s(.*)$/;
 my $doublelineregex = qr/^(\d{3})\-([0-9a-zA-Z\-\/\*]+)\=(.*)$/;
 my $singlelineregex = qr/^(\d{3})\s(.*)$/;
 
@@ -101,6 +104,27 @@ sub new {
 =pod
 
 ---+ getters/setters
+
+=cut
+
+=pod
+
+---++ socket
+
+Return the IO socket.
+
+=cut
+
+sub socket{
+	return shift->{'socket'};
+}
+
+
+=pod
+
+---++ authenticated->0/1
+
+Have we authenticated yet?
 
 =cut
 
@@ -169,6 +193,31 @@ sub port{
 
 =pod
 
+---++ onion_calculate()->($private_key,$hostname)
+
+Generate an onion url usable on tor.
+
+=cut
+
+sub onion_calculate{
+	my $rsa = Crypt::OpenSSL::RSA->generate_key(1024);
+	#my $rsa = Crypt::OpenSSL::RSA->new_private_key($PRIVKEY);
+	
+	my $pub = $rsa->get_public_key_string();
+	my @p = split(/\n/,$pub);
+	shift(@p); pop(@p);
+	$pub = join('',@p);
+	#warn "Got pub=$pub\n";
+	
+	my $onion = Convert::Base32::encode_base32(Digest::SHA::sha1(MIME::Base64::decode_base64($pub)));
+	$onion = substr($onion,0,16).'.onion';
+	#warn "Got onion=$onion\n";
+	
+	return ($rsa->get_private_key_string(),$onion);
+}
+
+=pod
+
 ---++ connect()
 
 =cut
@@ -183,37 +232,62 @@ sub connect{
 		PeerPort => $port,
 		Proto => 'tcp',
 	) or die "ERROR in Socket Creation : $!\n";
+	$socket->autoflush(1);
 
-	$this->sendcmd(
-		'AUTHENTICATE "'.$this->password.'"'
-		,sub{
-			my $response = shift;
-			my $t1 = $this;
-			$response =~ s/[\n\r]*$//;
-			if($response =~ m/^250 OK$/){
-				warn "Authenticated";
-				$t1->{'authenticated'} = 1;
-			}
-			else{
-				die "bad authentication";
-			}
-		}
-	);
 	$this->{'socket'} = $socket;
 	
 }
 
 =pod
 
+---++ sendauth($onsuccauth)
+
+Send authentication to tor control port.  Runs callback on success.
+
+=cut
+
+sub sendauth{
+	my ($this,$callback) = @_;
+	$callback //= sub{};
+	$this->sendcmd(
+		'AUTHENTICATE "'.$this->password.'"'
+		,sub{
+			my ($cb) = ($callback);
+			my ($t1,$status,$status_msg,$keyword,$dataref) = @_;
+			if($status == 250){
+				#warn "successfully authenticated";
+				$t1->{'authenticated'} = 1;
+				$cb->();
+			}
+			else{
+				die "authentication failed";
+			}
+		}
+	);
+}
+
+
+=pod
+
 ---++ sendcmd($cmd,$callback)
+
+Send a command to tor and then get a response back.
 
 =cut
 
 sub sendcmd {
 	my ($this,$cmd,$callback) = @_;
-	die "no command" unless defined && 0 < length($cmd);
+	die "no command" unless defined $cmd && 0 < length($cmd);
 	$callback //= sub{};
-	push(@{$this->{'commands'}},[$cmd,$callback]);		
+	#warn "appending command=[$cmd]";
+	push(@{$this->{'commands'}},[$cmd,$callback]);	
+	
+	# add this to flush the last line of the response to $cmd
+	push(@{$this->{'commands'}},["GETINFO dormant",sub{}]);
+	
+	if($this->{'socket read only'}){
+		$this->setwrite();
+	}
 }
 
 =pod
@@ -226,9 +300,65 @@ sub dequeue {
 	my ($this) = @_;
 	return undef unless 0 < scalar(@{$this->{'commands'}});
 	my $x = shift(@{$this->{'commands'}});
+	#warn "coderef=".ref($x->[1]);
 	push(@{$this->{'callbacks'}},$x->[1]);
+	
 	return $x->[0];
 }
+
+=pod
+
+---++ setwrite($sub)
+
+If we need to write to the socket, use this sub to set the socket (event loop event mask) to write.
+
+To add a setwrite sub, just put in the sub reference as an argument.
+
+=cut
+
+sub setwrite{
+	my ($this,$x) = @_;
+	#warn "setwrite";
+	if(defined $x && ref($x) eq 'CODE'){
+		$this->{'setwrite'} = $x;
+	}
+	elsif(defined $x){
+		die "bad setwrite sub";
+	}
+	elsif(!defined $this->{'setwrite'}){
+		die "no setwrite sub";
+	}
+	else{
+		$this->{'socket read only'} = 0;
+		$this->{'setwrite'}->();
+	}
+}
+
+=pod
+
+---++ setread($sub)
+
+If there is nothing in the queue, then just set the socket to read only.
+
+=cut
+
+sub setread {
+	my ($this,$x) = @_;
+	if(defined $x && ref($x) eq 'CODE'){
+		$this->{'setread'} = $x;
+	}
+	elsif(defined $x){
+		die "bad setread sub";
+	}
+	elsif(!defined $this->{'setread'}){
+		die "no setread sub";
+	}
+	else{
+		$this->{'socket read only'} = 1;
+		$this->{'setread'}->();
+	}
+}
+
 
 =pod
 
@@ -279,11 +409,10 @@ sub read_line{
 	my $line = shift;
 	$line =~ s/[\n\r]*$//;
 	
-	#warn "...Line=[$line]\n";
-	
-	
+	#warn "type=".$current->{'type'}."...Line=[$line]\n";
 	
 	if($current->{'type'} == 1 && $line =~ m/$multiline_middle_regex/ && !$current->{'prestopped'}){
+		#warn "multiline middle";
 		# keep going
 		push(@{$current->{'data'}},$2);
 		#warn "pushing data=$2";
@@ -327,6 +456,7 @@ sub read_line{
 		#warn "setting type=1\n";
 		$current->{'keyword'} = $keyword;
 		$current->{'type'} = 1;
+		#warn "starting multiline";
 	}
 	elsif($line =~ m/$doublelineregex/){
 		# starting double line
@@ -335,15 +465,15 @@ sub read_line{
 		$current->{'keyword'} = $keyword;
 		push(@{$current->{'data'}},$data);
 		$current->{'type'} = 2;
+		#warn "starting double line";
 	}
 	elsif($line =~ m/$singlelineregex/){
 		#warn "($status,$keyword,$data)";
 		# done, so type=0
 		$current->{'status'} = $1;
 		$current->{'status message'} = $2;
-		$this->reset_current();
 		#warn "stopping singleline\n";
-		
+		$this->reset_current();
 	}
 	else{
 		die "Got line=$line with type=".$current->{'type'};
@@ -356,10 +486,11 @@ sub read_line{
 # used only in read_line
 sub reset_current{
 	my $this = shift;	
-	$this->read_data();
-	
 	my $current = $this->{'current'};
-	#warn "resetting from type=".$c1->{'type'}."\n";
+	#warn "resetting from type=".$current->{'type'}."\n";
+
+	$this->read_data();
+
 	$current->{'type'} = 0;
 	$current->{'data'} = [];
 	$current->{'prestopped'} = 0;
@@ -374,18 +505,26 @@ sub reset_current{
 
 After reading lines and getting a 250 OK response, then feed the data to the callback.
 
+Callback args=($status,$status_message,$keyword,$data)
+
+where $data is an array ref.
+
 =cut
 
 sub read_data{
 	my $this = shift;
 	my $current = $this->{'current'};
-	my ($status,$status_message,$keyword,$data) = (
+
+	#warn "($status,$status_message,$keyword)\n";
+	#warn "..data=\n...".join("\n...",@{$data});
+	my $callback = shift(@{$this->{'callbacks'}});
+	die "no callback" unless defined $callback && ref($callback) eq 'CODE';
+	
+	$callback->(
+		$this,
 		$current->{'status'},$current->{'status message'},
 		$current->{'keyword'},$current->{'data'}
 	);
-	
-	warn "($status,$status_message,$keyword)\n";
-	warn "..data=\n...".join("\n...",@{$data});
 }
 
 
@@ -397,13 +536,53 @@ sub read_data{
 
 =pod
 
----++ getinfo('version')
+---++ getinfo($callback,'version')
+
+	# desc/id/$ORID
+	# md/id/<OR identity>
+	# desc-annotations/id/<OR identity>
+	# ns/id/<OR identity>
 
 =cut
 
+my $getinfo_cb;
+
+BEGIN{
+	 $getinfo_cb = {
+		'version' => \&getinfo_default
+		,'config-file' => \&getinfo_default
+		,'config-default-file' => \&getinfo_default
+		,'config-text' => \&getinfo_default
+		,'exit-policy/default' => \&getinfo_default
+		,'exit-policy/reject-private/default' => \&getinfo_default
+		,'exit-policy/reject-private/relay' => \&getinfo_default
+		,'exit-policy/ipv4' => \&getinfo_default
+		,'exit-policy/ipv6' => \&getinfo_default
+		,'exit-policy/full' => \&getinfo_default
+		,'dormant' => \&getinfo_default
+		,'desc/all-recent' => \&getinfo_default
+		,'ns/all' => \&getinfo_default
+	};
+}
+
 sub getinfo{
-	my ($this,$keyword) = @_;
+	my ($this,$callback,$keyword) = @_;
 	
+	$callback //= $getinfo_cb->{$keyword};
+	die "bad keyword for GETINFO" unless defined $callback && ref($callback) eq 'CODE';
+	
+	$this->sendcmd(
+		"GETINFO $keyword",
+		$callback
+	);
+
+}
+
+
+sub getinfo_default{
+	#my ($this,$keyword,$data) = @_;
+	my ($this,$status,$status_msg,$keyword,$dataref) = @_;
+	warn "Got $keyword=\n...".join("\n...",@{$dataref});
 }
 
 =pod
@@ -433,7 +612,11 @@ sub getinfo{
 =cut
 
 1;
+
+
 __END__
+
+
 # Below is stub documentation for your module. You'd better edit it!
 
 =head1 NAME
