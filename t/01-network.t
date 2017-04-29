@@ -63,14 +63,15 @@ my $wtimer = $loop->timer(5,0,sub{
 ######################### create tests #######################
 $torcontrol->sendauth(sub{
 	ok(1,'successful authentication');
-	
+	require Data::Dumper;
 	# create a hidden service
 	my $tc = $torcontrol;
 	$tc->getinfo(
 		sub{
-			my ($this,$status,$status_msg,$keyword,$dataref) = @_;
+			my ($this,$status,$status_msg,$dataref) = @_;
+			warn "cb($status,$status_msg)\n...".Data::Dumper::Dumper($dataref)."\n";
 			ok(
-				$dataref->[0] =~ m/^0\.2/
+				$dataref->{'version'} =~ m/^0\.2/
 				,'checking version'
 			);
 		}
@@ -79,19 +80,33 @@ $torcontrol->sendauth(sub{
 	
 	$tc->getinfo(
 		sub{
-			my ($this,$status,$status_msg,$keyword,$dataref) = @_;
-			ok(join("\n...",@{$dataref}) eq 'recommended', 'checking status/version/current');
+			my ($this,$status,$status_msg,$dataref) = @_;
+			warn "cb($status,$status_msg)\n...".Data::Dumper::Dumper($dataref)."\n";
+			ok(
+				$dataref->{'status/version/current'} eq 'recommended'
+				,'checking status/version/current'
+			);
 		}
 		,'status/version/current'
 	);
 	
+	
 	$tc->getinfo(
 		sub{
-			my ($this,$status,$status_msg,$keyword,$dataref) = @_;
-			warn "Onions=".join("\n...",@{$dataref})."\n";
+			my ($this,$status,$status_msg,$dataref) = @_;
+			warn "cb($status,$status_msg)\n...".Data::Dumper::Dumper($dataref)."\n";
 		}
 		,'onions/detached'
 	);
+	
+	$tc->onion_add(
+		sub{
+			my ($this,$status,$status_msg,$dataref) = @_;
+			warn "hiddenssh=".Data::Dumper::Dumper($dataref);		
+		}
+		,'hiddenssh',4222,'ssh-gateway:22'
+	);
+	
 });
 
 

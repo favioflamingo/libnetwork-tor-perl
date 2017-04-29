@@ -9,6 +9,7 @@ use Convert::Base32; # libconvert-base32-perl
 use MIME::Base64; # libmime-base64-perl
 use Crypt::OpenSSL::RSA; # libcrypt-openssl-rsa-perl
 use Encode qw(decode encode);
+use Data::Dumper;
 
 require Exporter;
 use AutoLoader;
@@ -65,8 +66,8 @@ XSLoader::load('Network::Tor', $VERSION);
 # Autoload methods go after =cut, and are processed by the autosplit program.
 
 my $multilineregex = qr/^(\d{3})\+([0-9a-zA-Z\-\/\*]+)\=$/;
-my $multiline_middle_regex = qr/^(\d{3}|[0-9a-zA-Z])\s(.*)$/;
-my $doublelineregex = qr/^(\d{3})\-([0-9a-zA-Z\-\/\*]+)\=(.*)$/;
+my $multiline_middle_regex = qr/^(\d{3}|[0-9a-zA-Z])[\s](.*)$/;
+my $doublelineregex = qr/^(\d{3})\-([0-9a-zA-Z\-\/\*\:]+)\=(.*)$/;
 my $singlelineregex = qr/^(\d{3})\s(.*)$/;
 
 =pod
@@ -100,6 +101,8 @@ sub new {
 	
 	$this->password($password);
 	$this->address($address);
+	
+	$this->reset_current();
 	
 	return $this;
 }
@@ -258,7 +261,7 @@ sub sendauth{
 		'AUTHENTICATE "'.$this->password.'"'
 		,sub{
 			my ($cb) = ($callback);
-			my ($t1,$status,$status_msg,$keyword,$dataref) = @_;
+			my ($t1,$status,$status_msg,$dataref) = @_;
 			if($status == 250){
 				#warn "successfully authenticated";
 				$t1->{'authenticated'} = 1;
@@ -414,7 +417,7 @@ sub read_socket{
 	$buf = decode('UTF-8', $buf,     Encode::FB_CROAK);
 	$this->{'buffer'} .= $buf;
 	
-	warn "Buffer=".$this->{'buffer'};
+	#warn "Buffer=".$this->{'buffer'};
 	
 	my @lines;
 	my $x = $this->{'buffer'};
@@ -430,11 +433,11 @@ sub read_socket{
 		}
 	}
 	if(0 < length($x)){
-		warn "left over=$x";
+#		warn "left over=$x";
 		$this->{'buffer'} = $x;
 	}
 	else{
-		warn "nothing left";
+#		warn "nothing left";
 		$this->{'buffer'} = '';
 	}
 	
@@ -502,44 +505,24 @@ sub read_line{
 	
 	$line =~ s/[\n\r]*$//;
 	
-	warn "type=".$current->{'type'}."...Line=[$line]\n";
+	#warn "type=".$current->{'type'}."...Line=[$line]\n";
 	
-	if($current->{'type'} == 1 && $line =~ m/$multiline_middle_regex/ && !$current->{'prestopped'}){
+	if($current->{'type'} == 1 && $line =~ m/$multiline_middle_regex/ ){
 		#warn "multiline middle";
 		# keep going
-		push(@{$current->{'data'}},$2);
+		push(@{$current->{'key value data'}},$2);
 		#warn "pushing data=$2";
 		return undef;
 	}
 	elsif($current->{'type'} == 1 && $line =~ m/^\.$/){
-		#warn "prestopping multiline\n";
-		$current->{'prestopped'} = 1;
-		return undef;
-	}
-	elsif($current->{'type'} == 1 && $line =~ m/$singlelineregex/){
 		#warn "stopping multiline\n";
-		$current->{'status'} = $1;
-		$current->{'status message'} = $2;
-		$this->reset_current();
+		$current->{'type'} = 0;
+		$current->{'data'}->{$current->{'keyword'}} = $current->{'key value data'};
 		return undef;
 	}
 	elsif($current->{'type'} == 1){
 		die "bad data";
 	}
-	elsif($current->{'type'} == 2 && $line =~ m/$singlelineregex/){
-		$current->{'status'} = $1;
-		$current->{'status message'} = $2;
-		#warn "stopping doubleline\n";
-		$this->reset_current();
-		# got all the data
-		
-		return undef;
-	}
-	elsif($current->{'type'} == 2){
-		die "bad data";
-	}
-	
-	
 	
 	my ($status,$keyword,$data);
 	if($line =~ m/$multilineregex/){
@@ -548,6 +531,8 @@ sub read_line{
 		#warn "($status,$keyword,$data)";
 		#warn "setting type=1\n";
 		$current->{'keyword'} = $keyword;
+		$current->{'key value data'} = [];
+		# data gets picked up until we read a '.'
 		$current->{'type'} = 1;
 		#warn "starting multiline";
 	}
@@ -555,9 +540,8 @@ sub read_line{
 		# starting double line
 		($status,$keyword,$data) = ($1,$2,$3);
 		#warn "($status,$keyword,$data)";
-		$current->{'keyword'} = $keyword;
-		push(@{$current->{'data'}},$data);
-		$current->{'type'} = 2;
+		$current->{'data'}->{$keyword} = $data;
+		#$current->{'type'} = 0;
 		#warn "starting double line";
 	}
 	elsif($line =~ m/$singlelineregex/){
@@ -566,7 +550,7 @@ sub read_line{
 		$current->{'status'} = $1;
 		$current->{'status message'} = $2;
 		#warn "stopping singleline\n";
-		$this->reset_current();
+		$this->read_data();
 	}
 	else{
 		die "Got line=$line with type=".$current->{'type'};
@@ -582,14 +566,13 @@ sub reset_current{
 	my $current = $this->{'current'};
 	#warn "resetting from type=".$current->{'type'}."\n";
 
-	$this->read_data();
-
 	$current->{'type'} = 0;
-	$current->{'data'} = [];
+	$current->{'data'} = {};
 	$current->{'prestopped'} = 0;
 	$current->{'keyword'} = '';
 	$current->{'status'} = 0;
 	$current->{'status message'} = '';
+	$current->{'key value data'} = [];
 };
 
 =pod
@@ -613,11 +596,17 @@ sub read_data{
 	my $callback = shift(@{$this->{'callbacks'}});
 	die "no callback" unless defined $callback && ref($callback) eq 'CODE';
 	
+	#warn "data=".Data::Dumper::Dumper($current->{'data'});
+	# do a deep copy of data?
+	
 	$callback->(
-		$this,
-		$current->{'status'},$current->{'status message'},
-		$current->{'keyword'},$current->{'data'}
+		$this
+		,$current->{'status'}
+		,$current->{'status message'},
+		,$current->{'data'}
 	);
+	
+	$this->reset_current();
 }
 
 
@@ -676,8 +665,8 @@ sub getinfo{
 
 sub getinfo_default{
 	#my ($this,$keyword,$data) = @_;
-	my ($this,$status,$status_msg,$keyword,$dataref) = @_;
-	warn "Got $keyword=\n...".join("\n...",@{$dataref});
+	my ($this,$status,$status_msg,$dataref) = @_;
+	warn "Got [$status,$status_msg]\n".Data::Dumper::Dumper($dataref);
 }
 
 =pod
@@ -707,6 +696,32 @@ sub getinfo_default{
 =cut
 
 sub onion_add{
+	my ($this,$callback,$ORname,$hiddenport,$target) = @_;
+	$callback //= sub{};
+	
+	my ($taddr,$tport);
+	if($target =~ m/^([^\:]+)\:(\d+)$/){
+		$taddr = $1;
+		$tport = $2;
+	}
+	else{
+		die "bad onion target";
+	}
+	
+	if($hiddenport =~ m/^(\d+)$/){
+		$hiddenport = $1;
+	}
+	else{
+		die "bad hidden port";
+	}
+	
+	die "bad orname " unless 0 < length($ORname);
+	
+	$this->sendcmd(
+		"ADD_ONION NEW:BEST Port=$hiddenport,$taddr:$tport"
+		,$callback
+	);
+	
 	
 }
 
