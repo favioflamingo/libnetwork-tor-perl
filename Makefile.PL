@@ -5,7 +5,13 @@ use ExtUtils::MakeMaker;
 WriteMakefile(
     NAME              => 'Network::Tor',
     VERSION_FROM      => 'lib/Network/Tor.pm', # finds $VERSION, requires EU::MM from perl >= 5.5
-    PREREQ_PM         => {}, # e.g., Module::Name => 1.1
+    PREREQ_PM         => {
+    	'Carp' => 0
+    	,'Convert::Base32' => 0
+    	,'MIME::Base64' => 0
+    	,'Crypt::OpenSSL::RSA' => 0
+    	,'Encode' => 0
+    }, # e.g., Module::Name => 1.1
     ABSTRACT_FROM     => 'lib/Network/Tor.pm', # retrieve abstract from module
     AUTHOR            => 'Joel De Jesus <joel@>',
     #LICENSE           => 'perl',

@@ -388,7 +388,7 @@ sub write_socket{
 	
 	#warn "do write";
 	if(defined $cmd){
-		#warn "Printing cmd=[$cmd]";
+		warn "Printing cmd=[$cmd]";
 		$cmd = encode('UTF-8', "$cmd\n", Encode::FB_CROAK);
 		my $n = syswrite($socket,$cmd,8192);
 		$this->{'write buffer'} = substr($cmd,$n);
@@ -414,24 +414,27 @@ sub read_socket{
 	$buf = decode('UTF-8', $buf,     Encode::FB_CROAK);
 	$this->{'buffer'} .= $buf;
 	
-	#warn "Buffer=".$this->{'buffer'};
+	warn "Buffer=".$this->{'buffer'};
 	
 	my @lines;
 	my $x = $this->{'buffer'};
 	while(0 < length($x)){
-		if($x =~ m/^([^\n\r]+)[\n\r]+(.*)$/){
+		if($x =~ m/^([^\n\r]+)[\n\r]*(.*)$/s){
 			my $y = $1;
 			push(@lines,$y) if 0 < length($y);
 			$x = $2;
 		}
 		else{
+			warn "What?";
 			last;
 		}
 	}
 	if(0 < length($x)){
+		warn "left over=$x";
 		$this->{'buffer'} = $x;
 	}
 	else{
+		warn "nothing left";
 		$this->{'buffer'} = '';
 	}
 	
@@ -499,7 +502,7 @@ sub read_line{
 	
 	$line =~ s/[\n\r]*$//;
 	
-	#warn "type=".$current->{'type'}."...Line=[$line]\n";
+	warn "type=".$current->{'type'}."...Line=[$line]\n";
 	
 	if($current->{'type'} == 1 && $line =~ m/$multiline_middle_regex/ && !$current->{'prestopped'}){
 		#warn "multiline middle";
@@ -652,6 +655,8 @@ BEGIN{
 		,'dormant' => \&getinfo_default
 		,'desc/all-recent' => \&getinfo_default
 		,'ns/all' => \&getinfo_default
+		,'onions/current' => \&getinfo_default
+		,'onions/detached' => \&getinfo_default
 	};
 }
 
@@ -700,6 +705,38 @@ sub getinfo_default{
      S: 250 OK
 
 =cut
+
+sub onion_add{
+	
+}
+
+=pod
+
+---++ onion_current
+
+onions/current
+
+=cut
+
+sub onion_current{
+	
+
+}
+
+
+=pod
+
+---++ onion_detached
+
+=cut
+
+sub onion_detached{
+	my ($this,$callback) = @_;
+	
+	$callback //= sub{};
+	
+	$this->sendcmd("");
+}
 
 1;
 

@@ -84,6 +84,14 @@ $torcontrol->sendauth(sub{
 		}
 		,'status/version/current'
 	);
+	
+	$tc->getinfo(
+		sub{
+			my ($this,$status,$status_msg,$keyword,$dataref) = @_;
+			warn "Onions=".join("\n...",@{$dataref})."\n";
+		}
+		,'onions/detached'
+	);
 });
 
 
