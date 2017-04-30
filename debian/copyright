@@ -1,11 +1,11 @@
 Format: http://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
-Upstream-Name: CBitcoin
-Upstream-Contact: https://github.com/favioflamingo/libcbitcoin-perl/issues
-Source: https://github.com/favioflamingo/libcbitcoin-perl
+Upstream-Name: Network::Tor
+Upstream-Contact: https://github.com/favioflamingo/libnetwork-tor-perl/issues
+Source: https://github.com/favioflamingo/libnetwork-tor-perl
 
 Files: *
-Copyright: 2014-2017 Joel DeJesus (Work Email) <dejesus.joel@e-flamingo.jp>
-License: GPL-2+ with OpenSSL exception
+Copyright: 2017 Joel Manuel De Jesus (Work Email) <dejesus.joel@e-flamingo.net>
+License: GPL-2+
  This package is free software; you can redistribute it and/or modify
  it under the terms of the GNU General Public License as published by
  the Free Software Foundation; either version 2 of the License, or
@@ -25,7 +25,7 @@ License: GPL-2+ with OpenSSL exception
 
 
 Files: debian/*
-Copyright: 2014-2017 Joel DeJesus (Work Email) <dejesus.joel@e-flamingo.jp>
+Copyright: 2017 Joel Manuel De Jesus (Work Email) <dejesus.joel@e-flamingo.net>
 License: GPL-2+
  This package is free software; you can redistribute it and/or modify
  it under the terms of the GNU General Public License as published by

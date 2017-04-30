@@ -1,6 +1,6 @@
-libcbitcoin-perl for Debian
+libnetwork-tor-perl for Debian
 ---------------------------
 
-Allows Perl programmers to write Bitcoin related applications
+This module talks to a tor daemon via the control port.
 
- -- Joel DeJesus <dejesus.joel@e-flamingo.jp>  Fri, 24 Oct 2014 14:23:17 +0900
+ -- Joel Manuel De Jesus (Work Account) <dejesus.joel@e-flamingo.net>  Fri, 24 Oct 2014 14:23:17 +0900

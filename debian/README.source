@@ -1,8 +1,7 @@
-libcbitcoin-perl for Debian
+libnetwork-tor-perl for Debian
 ---------------------------
 
-The modules in this package wrap functionality in libccoin (the picocoin library written by Jeff Garzik).
-
+This module talks to a tor daemon via the control port.
 
 
 

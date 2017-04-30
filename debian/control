@@ -1,28 +1,15 @@
-Source: libcbitcoin-perl
+Source: libnetwork-tor-perl
 Section: perl
 Priority: optional
 Maintainer: Joel Manuel De Jesus (Work Account) <dejesus.joel@e-flamingo.net>
-Build-Depends: libfile-slurp-perl,libcrypt-cbc-perl, 
-   libberkeleydb-perl, debhelper (>= 8.0.0), 
-   libcrypt-openssl-aes-perl, libio-socket-socks-perl, 
-   liblog-log4perl-perl, libmath-bigint-gmp-perl, 
-   libgmp-dev,libjson-xs-perl,libconvert-base32-perl, 
-   libssl-dev,
-   libccoin-dev, libnet-ip-perl,
-   libio-epoll-perl, libev-perl,
-   libdata-uuid-perl
+Build-Depends: debhelper (>= 9.0.0), 
+ libconvert-base32-perl, libmime-base64-perl, libcrypt-openssl-rsa-perl 
 Standards-Version: 3.9.6
 Homepage: https://github.com/favioflamingo/libcbitcoin-perl
 
-Package: libcbitcoin-perl
+Package: libnetwork-tor-perl
 Architecture: any
-Depends: libfile-slurp-perl, libcrypt-cbc-perl, 
-  libnet-dns-perl (>=1.06), libberkeleydb-perl, 
-  libcrypt-openssl-aes-perl, 
-  libio-socket-socks-perl, liblog-log4perl-perl, 
-  libmath-bigint-gmp-perl, libconvert-base32-perl, 
-  libccoin0 (>= 0.5), libdigest-sha-perl,
-  libnet-ip-perl,libdata-uuid-perl,
+Depends:  libconvert-base32-perl, libmime-base64-perl, libcrypt-openssl-rsa-perl,
   ${misc:Depends}, ${shlibs:Depends}
-Description: Perl modules for cbitcoin.
- Manipulate bitcoin objects in perl.
+Description: Perl modules for Network::Tor.
+ Talk to tor via control port.
