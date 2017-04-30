@@ -1,10 +1,7 @@
 Changes
 Makefile.PL
 MANIFEST
-ppport.h
 README
 Tor.xs
-t/Network-Tor.t
-fallback/const-c.inc
-fallback/const-xs.inc
+t/01-network.t
 lib/Network/Tor.pm
