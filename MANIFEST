@@ -2,6 +2,5 @@ Changes
 Makefile.PL
 MANIFEST
 README
-Tor.xs
 t/01-network.t
 lib/Network/Tor.pm
