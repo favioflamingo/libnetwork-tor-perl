@@ -1,0 +1,29 @@
+From: Joel DeJesus <dejesus.joel@e-flamingo.jp>
+Date: Sun, 30 Apr 2017 19:38:44 +0900
+Subject: removing test since there is no tor control port available
+
+---
+ t/01-network.t | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/t/01-network.t b/t/01-network.t
+index f46b6d4..ed89208 100644
+--- a/t/01-network.t
++++ b/t/01-network.t
+@@ -7,11 +7,15 @@ use strict;
+ use warnings;
+ 
+ use EV; # need libev-perl for testing
+-use Test::More tests => 4;
++use Test::More tests => 1;
+ BEGIN { use_ok('Network::Tor') };
+ 
+ ######################### set up event loop #######################
+ 
++__END__
++
++# to set up these tests (total=4), set the password and tor control port
++
+ # create tor control object
+ my $torcontrol = Network::Tor->new('ghost1',"127.0.0.1:9051");
+ $torcontrol->connect();

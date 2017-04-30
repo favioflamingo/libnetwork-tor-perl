@@ -14,7 +14,7 @@
 	dh $@  
 
 override_dh_auto_configure:
-	PREFIX=/usr perl Makefile.PL
+	perl Makefile.PL INSTALL_BASE=/usr
 override_dh_auto_install:
 	make DESTDIR=debian/libnetwork-tor-perl pure_install
 

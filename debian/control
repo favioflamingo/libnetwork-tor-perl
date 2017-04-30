@@ -9,7 +9,7 @@ Homepage: https://github.com/favioflamingo/libcbitcoin-perl
 
 Package: libnetwork-tor-perl
 Architecture: any
-Depends:  libconvert-base32-perl, libmime-base64-perl, libcrypt-openssl-rsa-perl, libev-perl,
+Depends:  libconvert-base32-perl, libmime-base64-perl, libcrypt-openssl-rsa-perl,
   ${misc:Depends}, ${shlibs:Depends}
 Description: Perl modules for Network::Tor.
  Talk to tor via control port.
