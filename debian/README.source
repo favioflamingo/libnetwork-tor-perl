@@ -1,0 +1,8 @@
+libcbitcoin-perl for Debian
+---------------------------
+
+The modules in this package wrap functionality in libccoin (the picocoin library written by Jeff Garzik).
+
+
+
+
