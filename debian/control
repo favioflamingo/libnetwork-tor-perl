@@ -3,13 +3,13 @@ Section: perl
 Priority: optional
 Maintainer: Joel Manuel De Jesus (Work Account) <dejesus.joel@e-flamingo.net>
 Build-Depends: debhelper (>= 9.0.0), 
- libconvert-base32-perl, libmime-base64-perl, libcrypt-openssl-rsa-perl 
+ libconvert-base32-perl, libmime-base64-perl, libcrypt-openssl-rsa-perl, libev-perl
 Standards-Version: 3.9.6
 Homepage: https://github.com/favioflamingo/libcbitcoin-perl
 
 Package: libnetwork-tor-perl
 Architecture: any
-Depends:  libconvert-base32-perl, libmime-base64-perl, libcrypt-openssl-rsa-perl,
+Depends:  libconvert-base32-perl, libmime-base64-perl, libcrypt-openssl-rsa-perl, libev-perl,
   ${misc:Depends}, ${shlibs:Depends}
 Description: Perl modules for Network::Tor.
  Talk to tor via control port.
