@@ -13,7 +13,7 @@ WriteMakefile(
     	,'Encode' => 0
     }, # e.g., Module::Name => 1.1
     ABSTRACT_FROM     => 'lib/Network/Tor.pm', # retrieve abstract from module
-    AUTHOR            => 'Joel De Jesus <joel@>',
+    AUTHOR            => 'Joel De Jesus <dejesus.joel@e-flamingo.net>',
     #LICENSE           => 'perl',
     #Value must be from legacy list of licenses here
     #http://search.cpan.org/perldoc?Module%3A%3ABuild%3A%3AAPI
